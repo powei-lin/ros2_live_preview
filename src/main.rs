@@ -5,6 +5,8 @@ use ros2_client::ros2::policy;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use show_image::create_window;
+use show_image::glam::UVec2;
+use show_image::WindowOptions;
 use std::io::Cursor;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -99,13 +101,29 @@ fn live_preview<T: DeserializeOwned + PreviewImage + 'static>(topic_name: &str) 
         .create_subscription::<T>(&chatter_topic, Some(reliable_qos))
         .unwrap();
 
-    let window = create_window(topic_name, Default::default()).unwrap();
+    let options = WindowOptions {
+        preserve_aspect_ratio: true,
+        start_hidden: true,
+        ..Default::default()
+    };
+    let window = create_window(topic_name, options).unwrap();
 
     let subscription_stream = chatter_subscription
         .async_stream()
         .for_each(|result| async {
             match result {
-                Ok((msg, _)) => {
+                Ok((msg, _info)) => {
+                    let img = msg.to_image();
+                    let window_w = 1280;
+                    let window_h = img.height() * window_w / img.width();
+
+                    window.run_function(move |mut w| {
+                        if w.image_info().is_none() {
+                            w.set_inner_size(UVec2::new(window_w, window_h));
+                            w.set_visible(true);
+                            println!("init");
+                        }
+                    });
                     window.set_image(topic_name, msg.to_image()).unwrap();
                 }
                 Err(e) => eprintln!("Receive request error: {:?}", e),
